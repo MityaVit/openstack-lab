@@ -1,0 +1,29 @@
+[[local|localrc]]
+HOST_IP={{ ansible_host }}
+SERVICE_HOST={{ hostvars['controller'].ansible_host }}
+ADMIN_PASSWORD={{ lab_password }}
+DATABASE_PASSWORD=$ADMIN_PASSWORD
+RABBIT_PASSWORD=$ADMIN_PASSWORD
+SERVICE_PASSWORD=$ADMIN_PASSWORD
+IPV4_ADDRS_SAFE_TO_USE=10.77.0.0/22
+FLOATING_RANGE=172.24.4.0/24
+API_WORKERS=2
+LOGFILE=/opt/stack/logs/stack.sh.log
+{% if inventory_hostname == 'controller' %}
+ENABLE_CHASSIS_AS_GW=True
+LIBVIRT_TYPE=qemu
+disable_service tempest c-api c-vol c-sch c-bak horizon
+[[post-config|/etc/neutron/plugins/ml2/ml2_conf.ini]]
+[ovn]
+enable_distributed_floating_ip=False
+{% else %}
+DATABASE_TYPE=mysql
+MYSQL_HOST=$SERVICE_HOST
+RABBIT_HOST=$SERVICE_HOST
+GLANCE_HOSTPORT=$SERVICE_HOST:9292
+OVN_SB_REMOTE=tcp:$SERVICE_HOST:6642
+OVN_NB_REMOTE=tcp:$SERVICE_HOST:6641
+ENABLED_SERVICES=n-cpu,placement-client,ovn-controller,ovs-vswitchd,ovsdb-server,q-ovn-metadata-agent
+ENABLE_CHASSIS_AS_GW=False
+LIBVIRT_TYPE=kvm
+{% endif %}

@@ -1,0 +1,62 @@
+- name: Prepare the hosting lab
+  hosts: all
+  become: true
+  vars_prompt:
+    - name: lab_password
+      prompt: "Shared DevStack lab password (letters and digits, at least 16 characters)"
+      private: true
+      confirm: true
+  pre_tasks:
+    - name: Check host identity and lab password
+      ansible.builtin.assert:
+        that:
+          - ansible_hostname == inventory_hostname
+          - ansible_host in ansible_all_ipv4_addresses
+          - lab_password is match('^[A-Za-z0-9]{16,}$')
+        quiet: true
+      no_log: true
+  tasks:
+    - name: Install bootstrap packages
+      ansible.builtin.apt:
+        name: [git, sudo, ca-certificates]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+    - name: Create the DevStack user
+      ansible.builtin.user:
+        name: stack
+        home: /opt/stack
+        create_home: true
+        shell: /bin/bash
+    - name: Allow traversal of the DevStack directory
+      ansible.builtin.file:
+        path: /opt/stack
+        state: directory
+        owner: stack
+        group: stack
+        mode: '0755'
+    - name: Configure DevStack sudo access
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/90-devstack-lab
+        content: "stack ALL=(ALL) NOPASSWD: ALL\n"
+        mode: '0440'
+        validate: '/usr/sbin/visudo -cf %s'
+    - name: Resolve the lab hosts over the shared management network
+      ansible.builtin.blockinfile:
+        path: /etc/hosts
+        block: |
+          {{ hostvars['controller'].ansible_host }} controller
+          {{ hostvars['compute01'].ansible_host }} compute01
+    - name: Fetch the lab release as the stack user
+      ansible.builtin.command:
+        argv: [sudo, -H, -u, stack, git, clone, --branch, stable/2026.2, 'https://opendev.org/openstack/devstack', /opt/stack/devstack]
+        creates: /opt/stack/devstack/.git
+    - name: Render the configuration for this host
+      ansible.builtin.template:
+        src: local.conf.j2
+        dest: /opt/stack/devstack/local.conf
+        owner: stack
+        group: stack
+        mode: '0600'
+      no_log: true
+      diff: false
