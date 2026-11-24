@@ -3,16 +3,26 @@
   become: true
   vars_prompt:
     - name: lab_password
-      prompt: "Shared DevStack lab password (letters and digits, at least 16 characters)"
+      prompt: "Shared DevStack password (ASCII letters and digits only)"
       private: true
       confirm: true
   pre_tasks:
-    - name: Check host identity and lab password
+    - name: Check hostname
       ansible.builtin.assert:
         that:
-          - ansible_hostname == inventory_hostname
-          - ansible_host in ansible_all_ipv4_addresses
-          - lab_password is match('^[A-Za-z0-9]{16,}$')
+          - ansible_facts['hostname'] == inventory_hostname
+        fail_msg: "Expected hostname {{ inventory_hostname }}, found {{ ansible_facts['hostname'] }}"
+        quiet: true
+    - name: Check management address
+      ansible.builtin.assert:
+        that:
+          - ansible_host in ansible_facts['all_ipv4_addresses']
+        fail_msg: "Expected {{ ansible_host }} on {{ inventory_hostname }}, found {{ ansible_facts['all_ipv4_addresses'] | join(', ') }}"
+        quiet: true
+    - name: Check DevStack password format (ASCII letters and digits only)
+      ansible.builtin.assert:
+        that:
+          - lab_password is match('^[A-Za-z0-9]+\Z')
         quiet: true
       no_log: true
   tasks:
