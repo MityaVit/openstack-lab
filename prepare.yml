@@ -7,6 +7,16 @@
       private: true
       confirm: true
   pre_tasks:
+    - name: Check the compute virtualization mode
+      ansible.builtin.assert:
+        that:
+          - compute_virt_type in ['qemu', 'kvm']
+        quiet: true
+      when: inventory_hostname in groups['workers']
+    - name: Check the KVM device for hardware acceleration
+      ansible.builtin.command: test -c /dev/kvm
+      changed_when: false
+      when: inventory_hostname in groups['workers'] and compute_virt_type == 'kvm'
     - name: Check hostname
       ansible.builtin.assert:
         that:
@@ -19,12 +29,14 @@
           - ansible_host in ansible_facts['all_ipv4_addresses']
         fail_msg: "Expected {{ ansible_host }} on {{ inventory_hostname }}, found {{ ansible_facts['all_ipv4_addresses'] | join(', ') }}"
         quiet: true
-    - name: Check DevStack password format (ASCII letters and digits only)
-      ansible.builtin.assert:
-        that:
-          - lab_password is match('^[A-Za-z0-9]+\Z')
-        quiet: true
-      no_log: true
+    - name: Reject an empty DevStack password
+      ansible.builtin.fail:
+        msg: "The DevStack password prompt was left empty. Run again and enter a password."
+      when: lab_password | length == 0
+    - name: Reject unsupported DevStack password characters
+      ansible.builtin.fail:
+        msg: "The DevStack password contains a character outside A-Z, a-z and 0-9. Generate an alphanumeric password and enter it at the DevStack prompt."
+      when: lab_password is search('[^A-Za-z0-9]')
   tasks:
     - name: Install bootstrap packages
       ansible.builtin.apt:

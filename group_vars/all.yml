@@ -1,0 +1,3 @@
+floating_range: 172.24.4.0/24
+public_gateway: 172.24.4.1
+compute_virt_type: qemu

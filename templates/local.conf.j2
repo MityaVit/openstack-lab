@@ -6,7 +6,8 @@ DATABASE_PASSWORD=$ADMIN_PASSWORD
 RABBIT_PASSWORD=$ADMIN_PASSWORD
 SERVICE_PASSWORD=$ADMIN_PASSWORD
 IPV4_ADDRS_SAFE_TO_USE=10.77.0.0/22
-FLOATING_RANGE=172.24.4.0/24
+FLOATING_RANGE={{ floating_range }}
+PUBLIC_NETWORK_GATEWAY={{ public_gateway }}
 API_WORKERS=2
 LOGFILE=/opt/stack/logs/stack.sh.log
 {% if inventory_hostname == 'controller' %}
@@ -25,5 +26,11 @@ OVN_SB_REMOTE=tcp:$SERVICE_HOST:6642
 OVN_NB_REMOTE=tcp:$SERVICE_HOST:6641
 ENABLED_SERVICES=n-cpu,placement-client,ovn-controller,ovs-vswitchd,ovsdb-server,q-ovn-metadata-agent
 ENABLE_CHASSIS_AS_GW=False
-LIBVIRT_TYPE=kvm
+LIBVIRT_TYPE={{ compute_virt_type }}
+{% if compute_virt_type == 'qemu' %}
+[[post-config|$NOVA_CONF]]
+[libvirt]
+cpu_mode=none
+cpu_models=
+{% endif %}
 {% endif %}
