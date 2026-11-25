@@ -94,6 +94,9 @@ source openrc admin admin
 openstack compute service list --service nova-compute
 ```
 
+<img width="857" height="97" alt="compute-up" src="https://github.com/user-attachments/assets/f86b47e9-8819-4491-ac22-a881f22ce848" />
+
+
 Wait until `compute01` reports `up`. Map the host into the Nova cell so the scheduler can place instances on it. DevStack also registers a local compute service on the controller. Disable scheduling there so customer instances land on `compute01`. If the service list uses a fully qualified controller hostname, use that exact value in the `set` command.
 
 ```bash
@@ -115,6 +118,9 @@ openstack flavor create --public --vcpus 1 --ram 512 --disk 2 host-mini
 openstack flavor create --public --vcpus 1 --ram 1024 --disk 5 host-small
 openstack flavor list
 ```
+
+<img width="721" height="627" alt="flavors" src="https://github.com/user-attachments/assets/4ef95ae7-0a95-4332-b1e7-b4889a0ffb7b" />
+
 
 ## 5. Launch a customer VPS
 
@@ -199,3 +205,15 @@ openstack keypair delete first-vps-key
 ```
 
 The two public flavors remain available for the next customer. Deleting the OpenStack keypair removes its registration; the SSH key files remain on the controller.
+
+## Verified deployment
+
+The `demo` project launched a CirrOS VPS using the `host-mini` flavor
+(1 vCPU, 512 MiB RAM, 2 GiB disk). The instance received the private
+address `10.77.0.23`. A client on the controller connected to its
+floating IP `172.24.4.110` over SSH using public-key authentication.
+
+Guest output:
+
+<img width="817" height="662" alt="sshsuccess" src="https://github.com/user-attachments/assets/28367748-0d72-46c8-9ec1-632003981745" />
+
