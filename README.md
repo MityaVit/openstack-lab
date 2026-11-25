@@ -8,9 +8,9 @@ Run a small VPS provider from the command line. As the operator, you publish two
 |---|---|---|
 | Ansible control machine | Prepares both OpenStack nodes over SSH | A system with Bash, OpenSSH and `ansible-core` |
 | `controller` | Runs the OpenStack APIs, scheduler, image service and OVN network gateway | A dedicated Ubuntu Server 24.04 node |
-| `compute01` | Runs customer instances using Nova Compute and KVM | A dedicated Ubuntu Server 24.04 node with a working `/dev/kvm` |
+| `compute01` | Runs customer instances using Nova Compute and libvirt | A dedicated Ubuntu Server 24.04 node |
 
-The two Ubuntu nodes can be physical servers or VMs. For a virtual compute node, enable nested virtualization in the outer hypervisor. As a starting allocation for one small instance, allow 3 vCPUs, 8 GiB RAM and 45 GiB disk for the controller, and 2 vCPUs, 4 GiB RAM and 35 GiB disk for the compute node. Guest memory comes from the compute node’s allocation. DevStack modifies networking and system services on both nodes; use hosts dedicated to the lab.
+The two Ubuntu nodes can be physical servers or VMs. The default compute driver uses software QEMU emulation for a small CirrOS guest. For hardware acceleration, set `compute_virt_type: kvm` in [group_vars/all.yml](group_vars/all.yml) and provide a working `/dev/kvm` on the compute node. This requires nested virtualization when the compute node is itself a VM. As a starting allocation for one small instance, allow 3 vCPUs, 8 GiB RAM and 45 GiB disk for the controller, and 2 vCPUs, 4 GiB RAM and 35 GiB disk for the compute node. Guest memory comes from the compute node’s allocation. DevStack modifies networking and system services on both nodes; use hosts dedicated to the lab.
 
 ## 1. Define the management network
 
@@ -23,9 +23,9 @@ Edit [inventory.ini](inventory.ini). Keep the host aliases and group names used 
 | Controller and compute management IPs | `192.168.56.11`, `192.168.56.12` | `inventory.ini` and the nodes’ network configuration |
 | SSH login | `lab` | `inventory.ini` |
 | Tenant address range | `10.77.0.0/22` | `IPV4_ADDRS_SAFE_TO_USE` in [templates/local.conf.j2](templates/local.conf.j2) |
-| Floating IP range | `172.24.4.0/24` | `FLOATING_RANGE` in the same template |
+| Floating IP range and controller bridge address | `172.24.4.0/24`, `172.24.4.1` | `floating_range` and `public_gateway` in [group_vars/all.yml](group_vars/all.yml) |
 
-Choose ranges that do not overlap with each other or with routes already in use. The supplied configuration puts the external network gateway on the controller. The customer SSH test runs **from the controller**, where the floating IP is reachable through `br-ex`. Internet-routable addresses are unnecessary for this lab.
+Choose ranges that do not overlap with each other or with routes already in use. Reserve the gateway address inside the floating range and outside the allocation pool. The supplied configuration puts the external network gateway on the controller. The customer SSH test runs **from the controller**, where the floating IP is reachable through `br-ex`. Internet-routable addresses are unnecessary for this lab.
 
 ## 2. Prepare both nodes with Ansible
 
@@ -35,10 +35,9 @@ On the **Ansible control machine**, authorize your management SSH public key on 
 read -rp 'Management SSH key path (absolute): ' management_key
 ansible-inventory -i inventory.ini --graph
 ansible all -i inventory.ini --private-key "$management_key" -m ping
-ansible workers -i inventory.ini --private-key "$management_key" -m command -a 'test -c /dev/kvm'
 ```
 
-Both nodes should return `pong`; the KVM check should exit with code 0. Run [prepare.yml](prepare.yml):
+Both nodes should return `pong`. Then run [prepare.yml](prepare.yml).
 
 ```bash
 ansible-playbook -i inventory.ini prepare.yml --private-key "$management_key" -K
@@ -64,6 +63,25 @@ cd /opt/stack/devstack
 ```
 
 Wait for **`stack.sh completed`**. Then open an SSH session on **compute01** and repeat the same commands there. Each installer reads the configuration for its own role. If installation stops, check that node’s timestamped file under `/opt/stack/logs/` for the first failing operation before continuing.
+
+### Persist the external bridge address
+
+Once DevStack has created the OVS bridge `br-ex`, run this command on the **Ansible control machine**. On an existing deployment with a working VPS, you can start here. Keep your existing inventory and set the gateway and subnet in `group_vars/all.yml` to match the live external network.
+
+```bash
+ansible-playbook -i inventory.ini bridge.yml --private-key "$management_key" -K
+```
+
+The playbook installs a systemd service on the controller and applies the gateway address immediately. Linux starts the service when the `br-ex` device appears, including after a reboot. It brings up the existing interface and assigns the gateway with the prefix from `floating_range`. Running the playbook again is safe.
+
+On the **controller**, check the configuration. With the supplied defaults the bridge should have `172.24.4.1/24`. The oneshot service finishes after assigning the address and can show `inactive` between runs.
+
+```bash
+systemctl is-enabled vps-lab-br-ex.service
+ip -br -4 address show dev br-ex
+```
+
+After the next normal controller reboot, repeat those commands and check `ip -4 route get "$fip"` and SSH using the current VPS address. In a new shell, set `fip` to the assigned floating IP first.
 
 For the remaining steps, use **one Bash session on the controller** as `stack`, in `/opt/stack/devstack`. This keeps the server ID and floating IP available through cleanup.
 
@@ -126,7 +144,7 @@ fip=$(openstack floating ip create public -f value -c floating_ip_address)
 ip -4 route get "$fip"
 ```
 
-The route should use `br-ex`. Copy the IPv4 address following **`src`** from the route output. Use it as the source of the inbound SSH rule. For the default topology it is typically `172.24.4.1`. Enter the address without a prefix length:
+Continue once the route shows `dev br-ex` and the configured gateway as `src`. If it uses the management or NAT interface, apply the bridge playbook before setting the rule. Copy the IPv4 address following **`src`** from the route output. Use it as the source of the inbound SSH rule. For the default topology it is typically `172.24.4.1`. Enter the address without a prefix length:
 
 ```bash
 read -rp 'Controller source IPv4 for SSH: ' ssh_source
@@ -181,4 +199,3 @@ openstack keypair delete first-vps-key
 ```
 
 The two public flavors remain available for the next customer. Deleting the OpenStack keypair removes its registration; the SSH key files remain on the controller.
-
