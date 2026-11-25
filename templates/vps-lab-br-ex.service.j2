@@ -1,0 +1,12 @@
+[Unit]
+Description=Set the OpenStack lab gateway address on br-ex
+BindsTo=sys-subsystem-net-devices-br\x2dex.device
+After=sys-subsystem-net-devices-br\x2dex.device
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/ip link set dev br-ex up
+ExecStart=/usr/sbin/ip address replace {{ gateway_cidr }} dev br-ex
+
+[Install]
+WantedBy=sys-subsystem-net-devices-br\x2dex.device

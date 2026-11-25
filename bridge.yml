@@ -1,0 +1,36 @@
+- name: Persist the lab gateway on the controller OVS bridge
+  hosts: control
+  become: true
+  gather_facts: false
+  vars:
+    gateway_cidr: "{{ public_gateway }}/{{ floating_range.split('/')[1] }}"
+  tasks:
+    - name: Check the existing DevStack bridge
+      ansible.builtin.command: ovs-vsctl br-exists br-ex
+      check_mode: false
+      changed_when: false
+
+    - name: Read IPv4 addresses on the active bridge
+      ansible.builtin.command: ip -o -4 address show dev br-ex up
+      register: bridge_addresses
+      check_mode: false
+      changed_when: false
+
+    - name: Install the bridge address service
+      ansible.builtin.template:
+        src: vps-lab-br-ex.service.j2
+        dest: /etc/systemd/system/vps-lab-br-ex.service
+        mode: '0644'
+      register: bridge_unit
+
+    - name: Enable the service for each appearance of br-ex
+      ansible.builtin.systemd_service:
+        name: vps-lab-br-ex.service
+        daemon_reload: "{{ bridge_unit.changed }}"
+        enabled: true
+
+    - name: Apply the address on the running controller
+      ansible.builtin.systemd_service:
+        name: vps-lab-br-ex.service
+        state: started
+      when: bridge_unit.changed or gateway_cidr not in bridge_addresses.stdout.split()
